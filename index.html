@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>Liquid Insight | 飲料數據監控</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: #0d0d15; color: #0ff; font-family: monospace; }
+        .cyber-card { border: 1px solid #0ff; background: rgba(0,255,255,0.05); padding: 20px; box-shadow: 0 0 15px rgba(0,255,255,0.1); }
+        #loading { position: fixed; top:0; left:0; width:100%; height:100%; background:#0d0d15; display:flex; justify-content:center; align-items:center; z-index:99; }
+    </style>
+</head>
+<body class="p-10">
+
+    <div id="loading">📡 SYSTEM INITIALIZING...</div>
+
+    <header class="text-center mb-10">
+        <h1 class="text-4xl font-bold border-b-2 border-cyan-500 inline-block pb-2">LIQUID INSIGHT V2</h1>
+        <p class="mt-4 text-gray-500">Real-time Data Stream from Google Sheets</p>
+    </header>
+
+    <div class="max-w-4xl mx-auto space-y-6">
+        <div class="cyber-card text-center">
+            <h2 class="text-sm text-gray-400">TOTAL DATA SAMPLES</h2>
+            <div id="total" class="text-6xl font-bold">--</div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="cyber-card">
+                <h3 class="mb-4 text-white">GRADE ANALYTICS</h3>
+                <canvas id="gradeChart" height="250"></canvas>
+            </div>
+            <div class="cyber-card">
+                <h3 class="mb-4 text-white">DIET PREFERENCES</h3>
+                <canvas id="dietChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 你的 CSV 網址
+        const URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQDoNLVNP_Xn-HCHJ5E09EEMZ-dLfWCEXfYU5npGUM6En9DAG-96VsyIXSqz6MvNHLonu4AJDNK9TkR/pub?output=csv';
+
+        async function start() {
+            try {
+                console.log("Fetching CSV...");
+                const res = await fetch(URL);
+                const csvText = await res.text();
+                
+                Papa.parse(csvText, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: (results) => {
+                        console.log("Data Received:", results.data);
+                        
+                        // 檢查是否有抓到資料
+                        if (results.data.length === 0) {
+                            document.getElementById('loading').innerText = "❌ No data found in CSV.";
+                            return;
+                        }
+
+                        // 隱藏 Loading
+                        document.getElementById('loading').style.display = 'none';
+                        
+                        const data = results.data;
+                        document.getElementById('total').innerText = data.length;
+                        draw(data);
+                    },
+                    error: (err) => {
+                        document.getElementById('loading').innerText = "❌ CSV Parse Error: " + err;
+                    }
+                });
+            } catch (e) {
+                document.getElementById('loading').innerText = "❌ Fetch Failed. Check your URL.";
+            }
+        }
+
+        function draw(data) {
+            // 1. 年級統計 (請確保欄位名稱精確為 '年級')
+            const grades = {};
+            data.forEach(d => {
+                const g = d['年級'] || '未知';
+                grades[g] = (grades[g] || 0) + 1;
+            });
+
+            new Chart(document.getElementById('gradeChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(grades),
+                    datasets: [{
+                        data: Object.values(grades),
+                        backgroundColor: ['#00f2ff', '#006aff', '#7000ff', '#ff007b']
+                    }]
+                },
+                options: { plugins: { legend: { labels: { color: '#fff' } } } }
+            });
+
+            // 2. 飲食統計 (請確保欄位名稱精確為 '飲食習慣')
+            const diets = { '葷食':0, '素食':0, '不吃牛':0 };
+            data.forEach(d => {
+                const s = d['飲食習慣'] || "";
+                if(s.includes('葷食')) diets['葷食']++;
+                if(s.includes('素食')) diets['素食']++;
+                if(s.includes('不吃牛')) diets['不吃牛']++;
+            });
+
+            new Chart(document.getElementById('dietChart'), {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(diets),
+                    datasets: [{
+                        label: '人數',
+                        data: Object.values(diets),
+                        backgroundColor: '#ff007b'
+                    }]
