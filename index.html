@@ -2,117 +2,143 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Liquid Insight | 飲料數據監控</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Liquid Insight | 飲料調查中心</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background: #0d0d15; color: #0ff; font-family: monospace; }
-        .cyber-card { border: 1px solid #0ff; background: rgba(0,255,255,0.05); padding: 20px; box-shadow: 0 0 15px rgba(0,255,255,0.1); }
-        #loading { position: fixed; top:0; left:0; width:100%; height:100%; background:#0d0d15; display:flex; justify-content:center; align-items:center; z-index:99; }
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
+        body { background-color: #0d0d15; color: #0ff; font-family: 'Orbitron', monospace; }
+        .cyber-card { 
+            background: rgba(20, 20, 30, 0.8); 
+            border: 1px solid #0ff; 
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.2);
+            padding: 1.5rem;
+        }
+        .neon-text { text-shadow: 0 0 10px #0ff; }
     </style>
 </head>
-<body class="p-10">
-
-    <div id="loading">📡 SYSTEM INITIALIZING...</div>
+<body class="p-4 md:p-10">
 
     <header class="text-center mb-10">
-        <h1 class="text-4xl font-bold border-b-2 border-cyan-500 inline-block pb-2">LIQUID INSIGHT V2</h1>
-        <p class="mt-4 text-gray-500">Real-time Data Stream from Google Sheets</p>
+        <h1 class="text-4xl font-bold neon-text border-b-2 border-cyan-500 inline-block pb-2">LIQUID INSIGHT</h1>
+        <div id="status" class="mt-4 text-xs text-cyan-700 animate-pulse">📡 SYSTEM INITIALIZING...</div>
     </header>
 
-    <div class="max-w-4xl mx-auto space-y-6">
+    <main class="max-w-4xl mx-auto space-y-6">
         <div class="cyber-card text-center">
-            <h2 class="text-sm text-gray-400">TOTAL DATA SAMPLES</h2>
-            <div id="total" class="text-6xl font-bold">--</div>
+            <h2 class="text-sm text-gray-400 uppercase tracking-widest">Total Respondents</h2>
+            <div id="total" class="text-7xl font-bold my-2">--</div>
+            <div class="text-[10px] text-cyan-900">REAL-TIME DATA STREAM</div>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="cyber-card">
-                <h3 class="mb-4 text-white">GRADE ANALYTICS</h3>
-                <canvas id="gradeChart" height="250"></canvas>
+                <h3 class="text-xs mb-4 text-white border-l-2 border-cyan-500 pl-2">GRADE DISTRIBUTION</h3>
+                <div class="h-64"><canvas id="gradeChart"></canvas></div>
             </div>
             <div class="cyber-card">
-                <h3 class="mb-4 text-white">DIET PREFERENCES</h3>
-                <canvas id="dietChart" height="250"></canvas>
+                <h3 class="text-xs mb-4 text-white border-l-2 border-pink-500 pl-2">DIET PREFERENCES</h3>
+                <div class="h-64"><canvas id="dietChart"></canvas></div>
             </div>
         </div>
-    </div>
+    </main>
 
     <script>
-        // 你的 CSV 網址
+        // 1. 請在此填入你【重新發布】後的新 CSV 連結
         const URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQDoNLVNP_Xn-HCHJ5E09EEMZ-dLfWCEXfYU5npGUM6En9DAG-96VsyIXSqz6MvNHLonu4AJDNK9TkR/pub?output=csv';
 
-        async function start() {
+        // 2. 備用資料 (當 Google 沒給資料時自動啟動)
+        const fallback = [
+            { "年級": "大一", "飲食習慣": "葷食" }, { "年級": "大二", "飲食習慣": "素食" },
+            { "年級": "大三", "飲食習慣": "不吃牛" }, { "年級": "大四", "飲食習慣": "葷食" }
+        ];
+
+        async function fetchData() {
             try {
-                console.log("Fetching CSV...");
                 const res = await fetch(URL);
+                if (!res.ok) throw new Error("Fetch failed");
                 const csvText = await res.text();
                 
                 Papa.parse(csvText, {
                     header: true,
                     skipEmptyLines: true,
                     complete: (results) => {
-                        console.log("Data Received:", results.data);
-                        
-                        // 檢查是否有抓到資料
-                        if (results.data.length === 0) {
-                            document.getElementById('loading').innerText = "❌ No data found in CSV.";
-                            return;
-                        }
-
-                        // 隱藏 Loading
-                        document.getElementById('loading').style.display = 'none';
-                        
-                        const data = results.data;
-                        document.getElementById('total').innerText = data.length;
-                        draw(data);
-                    },
-                    error: (err) => {
-                        document.getElementById('loading').innerText = "❌ CSV Parse Error: " + err;
+                        // 檢查資料是否有效
+                        const validData = results.data.filter(row => Object.values(row).some(v => v !== ""));
+                        if (validData.length > 0) {
+                            document.getElementById('status').innerText = "● SYSTEM ONLINE (SYNCED)";
+                            render(validData);
+                        } else { throw new Error("Empty Data"); }
                     }
                 });
             } catch (e) {
-                document.getElementById('loading').innerText = "❌ Fetch Failed. Check your URL.";
+                document.getElementById('status').innerText = "⚠️ OFFLINE MODE (USING DEMO)";
+                document.getElementById('status').style.color = "#ffaa00";
+                render(fallback);
             }
         }
 
-        function draw(data) {
-            // 1. 年級統計 (請確保欄位名稱精確為 '年級')
-            const grades = {};
-            data.forEach(d => {
-                const g = d['年級'] || '未知';
-                grades[g] = (grades[g] || 0) + 1;
+        function render(data) {
+            document.getElementById('total').innerText = data.length;
+
+            // 自動偵測欄位名稱 (防止因 Google 表單題目太長抓不到)
+            const keys = Object.keys(data[0]);
+            const gradeKey = keys.find(k => k.includes("年級")) || "年級";
+            const dietKey = keys.find(k => k.includes("飲食")) || "飲食習慣";
+
+            // --- 統計年級 ---
+            const gMap = {};
+            data.forEach(d => { 
+                const g = d[gradeKey] || "其他";
+                gMap[g] = (gMap[g] || 0) + 1; 
             });
 
             new Chart(document.getElementById('gradeChart'), {
                 type: 'doughnut',
                 data: {
-                    labels: Object.keys(grades),
+                    labels: Object.keys(gMap),
                     datasets: [{
-                        data: Object.values(grades),
-                        backgroundColor: ['#00f2ff', '#006aff', '#7000ff', '#ff007b']
+                        data: Object.values(gMap),
+                        backgroundColor: ['#0ff', '#006aff', '#700ff', '#f0f'],
+                        borderWidth: 0
                     }]
                 },
-                options: { plugins: { legend: { labels: { color: '#fff' } } } }
+                options: { maintainAspectRatio: false, plugins: { legend: { labels: { color: '#0ff', font: { size: 10 } } } } }
             });
 
-            // 2. 飲食統計 (請確保欄位名稱精確為 '飲食習慣')
-            const diets = { '葷食':0, '素食':0, '不吃牛':0 };
+            // --- 統計飲食 (模糊搜尋關鍵字) ---
+            const dMap = { '葷食': 0, '素食': 0, '不吃牛': 0 };
             data.forEach(d => {
-                const s = d['飲食習慣'] || "";
-                if(s.includes('葷食')) diets['葷食']++;
-                if(s.includes('素食')) diets['素食']++;
-                if(s.includes('不吃牛')) diets['不吃牛']++;
+                const s = String(d[dietKey] || "");
+                if (s.includes('葷')) dMap['葷食']++;
+                if (s.includes('素')) dMap['素食']++;
+                if (s.includes('牛')) dMap['不吃牛']++;
             });
 
             new Chart(document.getElementById('dietChart'), {
                 type: 'bar',
                 data: {
-                    labels: Object.keys(diets),
+                    labels: Object.keys(dMap),
                     datasets: [{
-                        label: '人數',
-                        data: Object.values(diets),
-                        backgroundColor: '#ff007b'
-
+                        data: Object.values(dMap),
+                        backgroundColor: '#f0f',
+                        borderRadius: 5
                     }]
+                },
+                options: {
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { ticks: { color: '#0ff' }, grid: { color: '#1a1a2e' } },
+                        x: { ticks: { color: '#0ff' }, grid: { display: false } }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        fetchData();
+    </script>
+</body>
+</html>
